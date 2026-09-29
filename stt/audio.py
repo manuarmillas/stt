@@ -17,6 +17,9 @@ class Recorder:
         self._frames: list = []
         self._n_samples = 0
         self._stream = None
+        # RMS del último bloque, para el vúmetro del overlay. Un float suelto se
+        # lee sin lock: basta con que sea reciente, no exacto.
+        self.level = 0.0
         self._lock = threading.Lock()
         # Lock aparte para los frames: el callback no puede tomar `_lock`, porque
         # stop() lo tiene cogido mientras espera a que el stream termine el callback.
@@ -32,6 +35,7 @@ class Recorder:
             return self._n_samples
 
     def start(self) -> None:
+        import numpy as np
         import sounddevice as sd
 
         with self._lock:
@@ -48,6 +52,7 @@ class Recorder:
                 if time.monotonic() - self._t0 > MAX_SECONDS:
                     return
                 chunk = indata.copy()
+                self.level = float(np.sqrt(np.mean(chunk * chunk)))
                 with self._frames_lock:
                     self._frames.append(chunk)
                     self._n_samples += len(chunk)
@@ -90,6 +95,7 @@ class Recorder:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+            self.level = 0.0
             with self._frames_lock:
                 frames = self._frames
                 self._frames = []
